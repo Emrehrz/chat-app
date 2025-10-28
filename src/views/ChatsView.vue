@@ -4,17 +4,35 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
 import { useThemeStore } from '../stores/theme'
+import { useUsersStore } from '../stores/users'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
 const themeStore = useThemeStore()
+const usersStore = useUsersStore()
 
-onMounted(() => {
-  chatStore.initializeChats(authStore.currentUser.id)
+onMounted(async () => {
+  if (authStore.currentUser?.id) {
+    chatStore.initializeChats(authStore.currentUser.id)
+    await usersStore.fetchUsers()
+    usersStore.subscribeToUserUpdates()
+  }
 })
 
 const chats = computed(() => chatStore.chatList)
+
+// Grup ve ikili sohbetleri ayır
+const groupChats = computed(() => chats.value.filter(chat => chat.isGroup))
+const directChats = computed(() => chats.value.filter(chat => !chat.isGroup))
+
+// Sohbet açılmamış kullanıcılar
+const availableUsers = computed(() => {
+  const chatUserIds = directChats.value.map(chat => chat.userId)
+  return usersStore.users.filter(user =>
+    user.id !== authStore.currentUser.id && !chatUserIds.includes(user.id)
+  )
+})
 
 const formatTime = (timestamp) => {
   const date = new Date(timestamp)
@@ -35,9 +53,20 @@ const openChat = (chatId) => {
   router.push(`/chat/${chatId}`)
 }
 
+const startNewChat = async (user) => {
+  const chatId = await chatStore.createOrGetChat(
+    user.id,
+    user.username,
+    user.avatar,
+    authStore.currentUser.id
+  )
+  if (chatId) {
+    router.push(`/chat/${chatId}`)
+  }
+}
 
-const handleLogout = () => {
-  authStore.logout()
+const handleLogout = async () => {
+  await authStore.logout()
   router.push('/login')
 }
 
@@ -95,24 +124,88 @@ const toggleTheme = () => {
         <span class="text-sm">Aşağıdan bir kullanıcı seçerek başlayın</span>
       </div>
 
-      <div v-else class="divide-y divide-border-light">
-        <div v-for="chat in chats" :key="chat.id" @click="openChat(chat.id)"
-          class="flex gap-md p-4 cursor-pointer hover:bg-border-light transition-colors">
-          <div class="relative">
-            <img :src="chat.userAvatar" :alt="chat.userName" class="avatar avatar-lg" />
-            <span v-if="chat.unreadCount > 0"
-              class="absolute -top-1 -right-1 bg-secondary-color text-white text-xs font-bold min-w-5 h-5 rounded-full flex items-center justify-center px-1">
-              {{ chat.unreadCount }}
-            </span>
+      <div v-else>
+        <!-- Grup Sohbetleri -->
+        <div v-if="groupChats.length > 0">
+          <div class="p-3 bg-surface-light">
+            <h3 class="text-xs font-semibold text-muted uppercase tracking-wide">Grup Sohbetleri</h3>
           </div>
-          <div class="flex-1 min-w-0">
-            <div class="flex justify-between items-center mb-1">
-              <h3 class="font-semibold text-primary truncate">{{ chat.userName }}</h3>
-              <span class="text-xs text-muted">{{ formatTime(chat.lastMessageTime) }}</span>
+          <div class="divide-y divide-border-light">
+            <div v-for="chat in groupChats" :key="chat.id" @click="openChat(chat.id)"
+              class="flex gap-md p-4 cursor-pointer hover:bg-border-light transition-colors">
+              <div>
+                <img :src="chat.userAvatar" :alt="chat.userName" class="avatar avatar-lg" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-center mb-1">
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-semibold text-primary truncate">{{ chat.userName }}</h3>
+                    <span v-if="chat.unreadCount > 0" class="unread-badge ml-1">
+                      {{ chat.unreadCount }}
+                    </span>
+                  </div>
+                  <span class="text-xs text-muted">{{ formatTime(chat.lastMessageTime) }}</span>
+                </div>
+                <p class="text-sm text-secondary truncate"
+                  :class="{ 'font-semibold text-primary': chat.unreadCount > 0 }">
+                  {{ chat.lastMessage }}
+                </p>
+              </div>
             </div>
-            <p class="text-sm text-secondary truncate" :class="{ 'font-semibold text-primary': chat.unreadCount > 0 }">
-              {{ chat.lastMessage }}
-            </p>
+          </div>
+        </div>
+
+        <!-- İkili Sohbetler -->
+        <div v-if="directChats.length > 0" class="border-t border-border-light">
+          <div class="p-3 bg-surface-light">
+            <h3 class="text-xs font-semibold text-muted uppercase tracking-wide">İkili Sohbetler</h3>
+          </div>
+          <div class="divide-y divide-border-light">
+            <div v-for="chat in directChats" :key="chat.id" @click="openChat(chat.id)"
+              class="flex gap-md p-4 cursor-pointer hover:bg-border-light transition-colors">
+              <div>
+                <img :src="chat.userAvatar" :alt="chat.userName" class="avatar avatar-lg" />
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-center mb-1">
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-semibold text-primary truncate">{{ chat.userName }}</h3>
+                    <span v-if="chat.unreadCount > 0" class="unread-badge ml-1">
+                      {{ chat.unreadCount }}
+                    </span>
+                  </div>
+                  <span class="text-xs text-muted">{{ formatTime(chat.lastMessageTime) }}</span>
+                </div>
+                <p class="text-sm text-secondary truncate"
+                  :class="{ 'font-semibold text-primary': chat.unreadCount > 0 }">
+                  {{ chat.lastMessage }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Yeni Sohbet Başlat -->
+        <div v-if="availableUsers.length > 0" class="border-t border-border-light">
+          <div class="p-3 bg-surface-light">
+            <h3 class="text-xs font-semibold text-muted uppercase tracking-wide">Yeni Sohbet Başlat</h3>
+          </div>
+          <div class="divide-y divide-border-light">
+            <div v-for="user in availableUsers" :key="user.id" @click="startNewChat(user)"
+              class="flex gap-md p-4 cursor-pointer hover:bg-border-light transition-all">
+              <img :src="user.avatar" :alt="user.username" class="avatar avatar-lg" />
+              <div class="flex-1 min-w-0 flex items-center justify-between">
+                <div>
+                  <h3 class="font-semibold text-primary">{{ user.username }}</h3>
+                  <p class="text-xs text-muted">{{ user.status === 'online' ? 'Çevrimiçi' : 'Çevrimdışı' }}</p>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"
+                  class="text-muted">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+                  <path d="M7 9h10v2H7zm0-3h10v2H7z" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -121,6 +214,21 @@ const toggleTheme = () => {
 </template>
 
 <style scoped>
+.unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
+  background-color: var(--secondary-color);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 0.75rem;
+  flex-shrink: 0;
+}
+
 .space-y-2>*+* {
   margin-top: 0.5rem;
 }
@@ -131,6 +239,10 @@ const toggleTheme = () => {
 
 .opacity-30 {
   opacity: 0.3;
+}
+
+.ml-1 {
+  margin-left: 0.5rem;
 }
 
 .mb-4 {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useChatStore } from '../stores/chat'
@@ -21,10 +21,17 @@ const currentChat = computed(() => {
 })
 
 onMounted(() => {
-  if (chatId.value) {
+  if (chatId.value && authStore.currentUser) {
     chatStore.setActiveChat(chatId.value)
+    // Subscribe to realtime updates for this chat
+    chatStore.subscribeToChat(chatId.value, authStore.currentUser.id)
   }
   scrollToBottom()
+})
+
+onUnmounted(() => {
+  // Note: We don't unsubscribe here to keep receiving messages
+  // Subscriptions are managed globally in chat store
 })
 
 watch(() => currentChat.value?.messages, () => {
@@ -109,7 +116,7 @@ const isSentByMe = (message) => {
 
       <div v-else class="flex flex-col gap-1">
         <MessageBubble v-for="message in currentChat.messages" :key="message.id" :message="message"
-          :is-sent="isSentByMe(message)" class="scale-in" />
+          :is-sent="isSentByMe(message)" :is-group="currentChat.isGroup" class="scale-in" />
       </div>
     </div>
 

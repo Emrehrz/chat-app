@@ -9,6 +9,10 @@ const props = defineProps({
   isSent: {
     type: Boolean,
     required: true
+  },
+  isGroup: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -41,8 +45,8 @@ function getSenderColor(senderId) {
 
 <template>
   <div class="message-bubble" :class="{ 'sent': isSent, 'received': !isSent }">
-    <!-- Sender name for received messages (group chat) -->
-    <div v-if="!isSent && message.senderName" class="sender-name" :style="{ color: getSenderColor(message.senderId) }">
+    <!-- Sender name only for received messages in group chats -->
+    <div v-if="!isSent && isGroup && message.senderName" class="sender-name" :style="{ color: getSenderColor(message.senderId) }">
       {{ message.senderName }}
     </div>
     <div v-if="message.type === 'image' && message.imageUrl" class="message-image">

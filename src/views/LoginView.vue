@@ -1,31 +1,70 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
-// Demo: email/password inputs are prefilled; no real auth validation for now
+
 const email = ref('demo@team.co')
 const password = ref('password123')
 const error = ref('')
+const isLoading = ref(false)
+const mode = ref('login') // 'login' or 'signup'
 
-const handleLogin = () => {
+const isSignupMode = computed(() => mode.value === 'signup')
+
+const handleSubmit = async () => {
+  error.value = ''
+  
   if (!email.value.trim()) {
     error.value = 'Lütfen e-posta adresi girin'
     return
   }
 
-  // Demo login: use email'ın @ öncesini kullanıcı adı olarak belirle
-  const nameFromEmail = email.value.split('@')[0] || 'kullanici'
-  authStore.login(nameFromEmail)
-  router.push('/')
+  if (!password.value.trim()) {
+    error.value = 'Lütfen şifre girin'
+    return
+  }
+
+  isLoading.value = true
+
+  try {
+    let result
+    if (isSignupMode.value) {
+      result = await authStore.signUp(email.value, password.value)
+      if (result.success) {
+        error.value = ''
+        // Show success message
+        alert('Kayıt başarılı! Email onayı gerekebilir. Giriş yapmayı deneyin.')
+        mode.value = 'login'
+      } else {
+        error.value = result.error || 'Kayıt başarısız oldu'
+      }
+    } else {
+      result = await authStore.login(email.value, password.value)
+      if (result.success) {
+        router.push('/')
+      } else {
+        error.value = result.error || 'Giriş başarısız oldu'
+      }
+    }
+  } catch (err) {
+    error.value = err.message || 'Bir hata oluştu'
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const handleKeyPress = (e) => {
   if (e.key === 'Enter') {
-    handleLogin()
+    handleSubmit()
   }
+}
+
+const toggleMode = () => {
+  mode.value = isSignupMode.value ? 'login' : 'signup'
+  error.value = ''
 }
 </script>
 
@@ -42,7 +81,9 @@ const handleKeyPress = (e) => {
           </svg>
         </div>
         <h1 class="text-xl font-bold text-primary mb-2">Ekip Sohbeti</h1>
-        <p class="text-secondary">Demo giriş: e-posta ve şifre ile devam edin (doğrulama yok)</p>
+        <p class="text-secondary">
+          {{ isSignupMode ? 'Yeni hesap oluştur' : 'Hesabınıza giriş yapın' }}
+        </p>
       </div>
 
       <div class="mb-6">
@@ -50,23 +91,31 @@ const handleKeyPress = (e) => {
         <div class="mb-4">
           <label for="email" class="block font-semibold text-primary mb-2">E-posta</label>
           <input id="email" v-model="email" type="email" placeholder="ornek@ekip.com" @keypress="handleKeyPress"
-            autocomplete="email" class="input" />
+            autocomplete="email" class="input" :disabled="isLoading" />
         </div>
         <!-- Password -->
         <div class="mb-2">
           <label for="password" class="block font-semibold text-primary mb-2">Şifre</label>
           <input id="password" v-model="password" type="password" placeholder="••••••••" @keypress="handleKeyPress"
-            autocomplete="current-password" class="input" />
+            autocomplete="current-password" class="input" :disabled="isLoading" />
         </div>
+        
         <span v-if="error" class="block text-red-500 text-sm mt-2">{{ error }}</span>
+        
+        <span v-if="!authStore.isConfigured" class="block text-yellow-600 text-sm mt-2 bg-yellow-50 p-2 rounded">
+          ⚠️ Supabase yapılandırılmamış. Mock mode aktif.
+        </span>
 
-        <button @click="handleLogin" class="btn btn-primary w-full text-lg font-semibold py-3 mt-4">
-          Giriş Yap
+        <button @click="handleSubmit" class="btn btn-primary w-full text-lg font-semibold py-3 mt-4" :disabled="isLoading">
+          <span v-if="isLoading">İşleniyor...</span>
+          <span v-else>{{ isSignupMode ? 'Kayıt Ol' : 'Giriş Yap' }}</span>
         </button>
       </div>
 
       <div class="text-center pt-6 border-t border-border-color">
-        <p class="text-muted text-sm">Demo: Doğrulama yapılmaz, e-posta adı kullanıcı adınız olarak kullanılır.</p>
+        <button @click="toggleMode" class="text-primary-color hover:underline text-sm" :disabled="isLoading">
+          {{ isSignupMode ? 'Zaten hesabınız var mı? Giriş yapın' : 'Hesabınız yok mu? Kayıt olun' }}
+        </button>
       </div>
     </div>
   </div>
