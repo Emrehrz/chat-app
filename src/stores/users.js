@@ -36,7 +36,9 @@ export const useUsersStore = defineStore('users', () => {
   ]
 
   // Fetch all users from Supabase
-  async function fetchUsers() {
+  // Accept optional currentUserId to filter out users that already have a direct
+  // chat with the current user (used for the "start new chat" list).
+  async function fetchUsers(currentUserId = null) {
     loading.value = true
     error.value = null
 
@@ -52,10 +54,21 @@ export const useUsersStore = defineStore('users', () => {
         return
       }
 
-      const { data, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('username')
+      let data, fetchError
+      if (currentUserId) {
+        // Call RPC that returns available users for new direct chats
+        // Note: RPC parameter name is `p_current_user` to avoid reserved words.
+        const rpc = await supabase.rpc('get_available_users_for_new_chat', { p_current_user: currentUserId })
+        data = rpc.data
+        fetchError = rpc.error
+      } else {
+        const res = await supabase
+          .from('profiles')
+          .select('*')
+          .order('username')
+        data = res.data
+        fetchError = res.error
+      }
 
       if (fetchError) {
         console.error('Users fetch error:', fetchError)

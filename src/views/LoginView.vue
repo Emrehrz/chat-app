@@ -6,8 +6,8 @@ import { useAuthStore } from '../stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const email = ref('demo@team.co')
-const password = ref('password123')
+const email = ref('')
+const password = ref('')
 const error = ref('')
 const isLoading = ref(false)
 const mode = ref('login') // 'login' or 'signup'
@@ -16,7 +16,7 @@ const isSignupMode = computed(() => mode.value === 'signup')
 
 const handleSubmit = async () => {
   error.value = ''
-  
+
   if (!email.value.trim()) {
     error.value = 'Lütfen e-posta adresi girin'
     return
@@ -99,24 +99,25 @@ const toggleMode = () => {
           <input id="password" v-model="password" type="password" placeholder="••••••••" @keypress="handleKeyPress"
             autocomplete="current-password" class="input" :disabled="isLoading" />
         </div>
-        
+
         <span v-if="error" class="block text-red-500 text-sm mt-2">{{ error }}</span>
-        
+
         <span v-if="!authStore.isConfigured" class="block text-yellow-600 text-sm mt-2 bg-yellow-50 p-2 rounded">
           ⚠️ Supabase yapılandırılmamış. Mock mode aktif.
         </span>
 
-        <button @click="handleSubmit" class="btn btn-primary w-full text-lg font-semibold py-3 mt-4" :disabled="isLoading">
+        <button @click="handleSubmit" class="btn btn-primary w-full text-lg font-semibold py-3 mt-4"
+          :disabled="isLoading">
           <span v-if="isLoading">İşleniyor...</span>
           <span v-else>{{ isSignupMode ? 'Kayıt Ol' : 'Giriş Yap' }}</span>
         </button>
       </div>
 
-      <div class="text-center pt-6 border-t border-border-color">
+      <!-- <div class="text-center pt-6 border-t border-border-color">
         <button @click="toggleMode" class="text-primary-color hover:underline text-sm" :disabled="isLoading">
           {{ isSignupMode ? 'Zaten hesabınız var mı? Giriş yapın' : 'Hesabınız yok mu? Kayıt olun' }}
         </button>
-      </div>
+      </div> -->
     </div>
   </div>
 </template>

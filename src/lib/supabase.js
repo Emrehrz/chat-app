@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+// optional explicit realtime URL (ws:// or wss://). Useful for self-hosted Supabase.
+const supabaseRealtimeUrl = import.meta.env.VITE_SUPABASE_REALTIME_URL
 
 /**
  * Check if Supabase is properly configured
@@ -20,7 +22,15 @@ export const supabase = isSupabaseConfigured()
       autoRefreshToken: true,
       detectSessionInUrl: true
     },
-    realtime: {
+    // Configure realtime. If a dedicated realtime URL is provided (common in
+    // self-hosted setups), pass it to the client. Otherwise the client will
+    // derive the realtime URL from the main `supabaseUrl`.
+    realtime: supabaseRealtimeUrl ? {
+      url: supabaseRealtimeUrl,
+      params: {
+        eventsPerSecond: 10
+      }
+    } : {
       params: {
         eventsPerSecond: 10
       }

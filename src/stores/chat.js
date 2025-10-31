@@ -8,6 +8,7 @@ export const useChatStore = defineStore('chat', () => {
   const loading = ref(false)
   const error = ref(null)
   const messageSubscriptions = ref({})
+  const membershipSubscription = ref(null)
 
   const chatList = computed(() => {
     return Object.values(chats.value).map(chat => {
@@ -23,7 +24,12 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   async function initializeChats(currentUserId) {
-    if (!currentUserId) return
+    if (!currentUserId) {
+      console.warn('[DEBUG] initializeChats called with no currentUserId')
+      return
+    }
+
+    console.log('[DEBUG] initializeChats starting for user:', currentUserId)
 
     loading.value = true
     error.value = null
@@ -39,38 +45,64 @@ export const useChatStore = defineStore('chat', () => {
         .select('chat_id, chats(id, name, is_group, avatar_url, created_at)')
         .eq('user_id', currentUserId)
 
+      console.log('[DEBUG] chatMembers query result:', { chatMembers, fetchError, currentUserId })
+
       if (fetchError) {
         console.error('Chats fetch error:', fetchError)
         initializeMockChats(currentUserId)
         return
       }
 
+      if (!chatMembers || chatMembers.length === 0) {
+        console.warn('[DEBUG] No chat_members found for user:', currentUserId)
+        console.log('[DEBUG] This is normal if user has no chats yet. Chats are auto-created on profile insert.')
+        return
+      }
+
+      console.log('[DEBUG] Processing', chatMembers.length, 'chat memberships')
+      console.log('[DEBUG] chatMembers full data:', JSON.stringify(chatMembers, null, 2))
+
       for (const member of chatMembers) {
-        if (!member.chats) continue
+        console.log('[DEBUG] Processing member:', { chat_id: member.chat_id, hasChats: !!member.chats })
+
+        if (!member.chats) {
+          console.warn('[DEBUG] member.chats is null/undefined for chat_id:', member.chat_id,
+            '- This means RLS blocked the nested query or the chat was deleted.')
+          continue
+        }
 
         const chat = member.chats
         const chatId = chat.id
 
-        if (!chat.is_group) {
-          const { data: members } = await supabase
-            .from('chat_members')
-            .select('user_id, profiles(username, avatar_url, status)')
-            .eq('chat_id', chatId)
-            .neq('user_id', currentUserId)
-            .limit(1)
+        console.log('[DEBUG] Chat data:', { chatId, isGroup: chat.is_group, name: chat.name, avatar: chat.avatar_url })
 
-          if (members && members[0]?.profiles) {
-            const otherUser = members[0].profiles
-            chats.value[chatId] = {
-              id: chatId,
-              isGroup: false,
-              userId: members[0].user_id,
-              userName: otherUser.username,
-              userAvatar: otherUser.avatar_url,
-              currentUserId,
-              createdAt: chat.created_at,
-              messages: []
-            }
+        if (!chat.is_group) {
+          // Use RPC function to get chat members (bypasses RLS safely)
+          const { data: members, error: membersError } = await supabase
+            .rpc('get_chat_members', { p_chat_id: chatId })
+
+          console.log('[DEBUG] Direct chat members query (RPC):', { chatId, members, membersError })
+
+          // Filter to get only the other user (not current user)
+          const otherMember = members?.find(m => m.user_id !== currentUserId)
+
+          // Skip self-chats: if no other members exist, this is a chat with yourself
+          if (!otherMember) {
+            console.warn('[DEBUG] Skipping self-chat or empty chat:', chatId)
+            continue
+          }
+
+          console.log('[DEBUG] Other user from RPC:', otherMember)
+
+          chats.value[chatId] = {
+            id: chatId,
+            isGroup: false,
+            userId: otherMember.user_id,
+            userName: otherMember.username,
+            userAvatar: otherMember.avatar_url,
+            currentUserId,
+            createdAt: chat.created_at,
+            messages: []
           }
         } else {
           chats.value[chatId] = {
@@ -85,7 +117,17 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         await fetchChatMessages(chatId, currentUserId)
+        // Subscribe to realtime messages for this chat automatically so the user
+        // receives messages even if they haven't opened the chat view yet.
+        subscribeToChat(chatId, currentUserId)
       }
+
+      // Subscribe to membership changes so we get notified when new chats are
+      // created/added for this user (e.g. someone started a direct chat with them)
+      subscribeToMemberships(currentUserId)
+
+      console.log('[DEBUG] initializeChats completed. chats.value keys:', Object.keys(chats.value))
+      console.log('[DEBUG] chatList computed length:', Object.keys(chats.value).length)
     } catch (err) {
       console.error('Initialize chats error:', err)
       initializeMockChats(currentUserId)
@@ -162,7 +204,20 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function subscribeToChat(chatId, currentUserId) {
-    if (!isSupabaseConfigured() || messageSubscriptions.value[chatId]) return
+    if (!isSupabaseConfigured()) return
+
+    // If there's already a subscription, skip (or re-use existing)
+    if (messageSubscriptions.value[chatId]) {
+      const existing = messageSubscriptions.value[chatId]
+      // If the existing channel is closed, remove it and continue to recreate
+      if (existing?.state === 'CLOSED') {
+        try { existing.unsubscribe() } catch (e) { /* ignore */ }
+        delete messageSubscriptions.value[chatId]
+      } else {
+        console.log(`Already subscribed to messages for chat ${chatId}`)
+        return
+      }
+    }
 
     const channel = supabase
       .channel(`messages:${chatId}`)
@@ -172,6 +227,9 @@ export const useChatStore = defineStore('chat', () => {
         table: 'messages',
         filter: `chat_id=eq.${chatId}`
       }, async (payload) => {
+        // Helpful debug logs for realtime payloads
+        console.log('[realtime] new message payload for chat', chatId, payload.new)
+
         const { data: profile } = await supabase
           .from('profiles')
           .select('username')
@@ -196,9 +254,113 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
       })
-      .subscribe()
+      .subscribe((status) => {
+        console.log(`[realtime] subscription status for chat ${chatId}:`, status)
+      })
 
     messageSubscriptions.value[chatId] = channel
+  }
+
+  // Listen for new chat_members rows where this user is added to a chat.
+  // When that happens, fetch chat details/messages and subscribe to realtime.
+  function subscribeToMemberships(currentUserId) {
+    if (!isSupabaseConfigured() || membershipSubscription.value) return
+
+    const channel = supabase
+      .channel(`chat_members:${currentUserId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_members',
+        filter: `user_id=eq.${currentUserId}`
+      }, async (payload) => {
+        console.log('[realtime] new chat_members for user', currentUserId, payload.new)
+        const chatId = payload.new.chat_id
+
+        try {
+          // fetch chat details
+          const { data: chatData, error: chatErr } = await supabase
+            .from('chats')
+            .select('id, name, is_group, avatar_url, created_at')
+            .eq('id', chatId)
+            .single()
+
+          if (chatErr || !chatData) {
+            console.warn('Could not fetch chat details for new membership', chatErr)
+            return
+          }
+
+          // If it's a direct chat, try to find the other member's profile
+          if (!chatData.is_group) {
+            const { data: members } = await supabase
+              .from('chat_members')
+              .select('user_id, profiles(username, avatar_url, status)')
+              .eq('chat_id', chatId)
+              .neq('user_id', currentUserId)
+              .limit(1)
+
+            if (members && members[0]?.profiles) {
+              const otherUser = members[0].profiles
+              chats.value[chatId] = {
+                id: chatId,
+                isGroup: false,
+                userId: members[0].user_id,
+                userName: otherUser.username,
+                userAvatar: otherUser.avatar_url,
+                currentUserId,
+                createdAt: chatData.created_at,
+                messages: []
+              }
+            }
+          } else {
+            chats.value[chatId] = {
+              id: chatId,
+              isGroup: true,
+              userName: chatData.name || 'Grup Sohbeti',
+              userAvatar: chatData.avatar_url || 'https://ui-avatars.com/api/?name=Grup&background=00a884',
+              currentUserId,
+              createdAt: chatData.created_at,
+              messages: []
+            }
+          }
+
+          // Load messages and subscribe to realtime for this chat
+          await fetchChatMessages(chatId, currentUserId)
+          subscribeToChat(chatId, currentUserId)
+        } catch (err) {
+          console.error('Error handling new membership realtime payload:', err)
+        }
+      })
+      .subscribe((status) => {
+        console.log('[realtime] membership subscription status:', status)
+      })
+
+    membershipSubscription.value = channel
+  }
+
+  function unsubscribeFromMemberships() {
+    const channel = membershipSubscription.value
+    if (!channel) return
+    try {
+      channel.unsubscribe()
+      console.log('[realtime] unsubscribed from membership events')
+    } catch (err) {
+      console.warn('[realtime] error unsubscribing membership:', err)
+    }
+    membershipSubscription.value = null
+  }
+
+  // Unsubscribe helper to stop receiving realtime events for a chat
+  function unsubscribeFromChat(chatId) {
+    const channel = messageSubscriptions.value[chatId]
+    if (!channel) return
+    try {
+      channel.unsubscribe()
+      console.log(`[realtime] unsubscribed from chat ${chatId}`)
+    } catch (err) {
+      console.warn(`[realtime] error unsubscribing from chat ${chatId}:`, err)
+    }
+    delete messageSubscriptions.value[chatId]
   }
 
   async function createOrGetChat(userId, userName, userAvatar, currentUserId) {
@@ -383,5 +545,8 @@ export const useChatStore = defineStore('chat', () => {
     getChatById,
     createOrGetChat,
     subscribeToChat
+    , unsubscribeFromChat,
+    subscribeToMemberships,
+    unsubscribeFromMemberships
   }
 })

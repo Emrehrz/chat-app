@@ -15,7 +15,7 @@ const usersStore = useUsersStore()
 onMounted(async () => {
   if (authStore.currentUser?.id) {
     chatStore.initializeChats(authStore.currentUser.id)
-    await usersStore.fetchUsers()
+    await usersStore.fetchUsers(authStore.currentUser.id)
     usersStore.subscribeToUserUpdates()
   }
 })
@@ -185,29 +185,7 @@ const toggleTheme = () => {
           </div>
         </div>
 
-        <!-- Yeni Sohbet Başlat -->
-        <div v-if="availableUsers.length > 0" class="border-t border-border-light">
-          <div class="p-3 bg-surface-light">
-            <h3 class="text-xs font-semibold text-muted uppercase tracking-wide">Yeni Sohbet Başlat</h3>
-          </div>
-          <div class="divide-y divide-border-light">
-            <div v-for="user in availableUsers" :key="user.id" @click="startNewChat(user)"
-              class="flex gap-md p-4 cursor-pointer hover:bg-border-light transition-all">
-              <img :src="user.avatar" :alt="user.username" class="avatar avatar-lg" />
-              <div class="flex-1 min-w-0 flex items-center justify-between">
-                <div>
-                  <h3 class="font-semibold text-primary">{{ user.username }}</h3>
-                  <p class="text-xs text-muted">{{ user.status === 'online' ? 'Çevrimiçi' : 'Çevrimdışı' }}</p>
-                </div>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20"
-                  class="text-muted">
-                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
-                  <path d="M7 9h10v2H7zm0-3h10v2H7z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- "Yeni Sohbet Başlat" removed: direct chats are auto-created on profile insert -->
       </div>
     </div>
   </div>

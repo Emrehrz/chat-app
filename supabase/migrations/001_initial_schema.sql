@@ -195,8 +195,17 @@ BEGIN
 
   -- If no existing chat, create one
   IF chat_id_result IS NULL THEN
-    INSERT INTO public.chats (is_group, created_by)
-    VALUES (false, user_id_1)
+    -- Set a sensible name/avatar for direct chats using the other participant's
+    -- profile data so the UI has something to display.
+    INSERT INTO public.chats (is_group, created_by, name, avatar_url)
+    VALUES (
+      false,
+      user_id_1,
+      -- Use the other user's username as the chat name
+      (SELECT username FROM public.profiles WHERE id = user_id_2 LIMIT 1),
+      -- Use the other user's avatar for the chat avatar
+      (SELECT avatar_url FROM public.profiles WHERE id = user_id_2 LIMIT 1)
+    )
     RETURNING id INTO chat_id_result;
 
     -- Add both users to the chat
