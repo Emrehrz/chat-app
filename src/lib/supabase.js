@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-// optional explicit realtime URL (ws:// or wss://). Useful for self-hosted Supabase.
+// Optional explicit realtime URL (ws:// or wss://). Useful for self-hosted Supabase.
 const supabaseRealtimeUrl = import.meta.env.VITE_SUPABASE_REALTIME_URL
 
 /**
@@ -13,8 +13,7 @@ export function isSupabaseConfigured() {
   return !!(supabaseUrl && supabaseAnonKey && supabaseUrl !== 'your_supabase_project_url')
 }
 
-// Only create Supabase client if credentials are provided
-// In mock mode (no credentials), supabase will be null
+// Only create Supabase client if credentials are provided. Otherwise, supabase will be null.
 export const supabase = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
@@ -38,12 +37,7 @@ export const supabase = isSupabaseConfigured()
   })
   : null
 
-// Log current mode
-if (isSupabaseConfigured()) {
-  console.log('✅ Supabase bağlantısı aktif')
-} else {
-  console.log('📦 Mock mod aktif - Dummy data kullanılıyor')
-}
+// Production: avoid noisy console logs regarding mode
 
 // Helper to get current user (only works when Supabase is configured)
 export const getCurrentUser = async () => {

@@ -118,7 +118,7 @@ export const useUsersStore = defineStore('users', () => {
           table: 'profiles'
         },
         (payload) => {
-          console.log('Profile change:', payload)
+
 
           if (payload.eventType === 'INSERT') {
             const newUser = {

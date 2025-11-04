@@ -115,7 +115,19 @@ const toggleTheme = () => {
 
     <!-- Chat List -->
     <div class="chat-content scrollbar-thin">
-      <div v-if="chats.length === 0" class="flex flex-col items-center justify-center h-full text-center text-muted">
+      <!-- Loading skeleton -->
+      <div v-if="chatStore.loading" class="p-4">
+        <div v-for="n in 6" :key="n" class="skeleton-item">
+          <div class="skeleton-avatar" />
+          <div class="skeleton-lines">
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line"></div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else-if="chats.length === 0"
+        class="flex flex-col items-center justify-center h-full text-center text-muted">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="80" height="80"
           class="opacity-30 mb-4">
           <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
@@ -192,6 +204,50 @@ const toggleTheme = () => {
 </template>
 
 <style scoped>
+/* Loading skeleton */
+.skeleton-item {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: 1rem;
+  align-items: center;
+}
+
+.skeleton-avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--border-light);
+  flex-shrink: 0;
+}
+
+.skeleton-lines {
+  flex: 1;
+  min-width: 0;
+}
+
+.skeleton-line {
+  height: 12px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, var(--border-light) 25%, var(--border-color) 37%, var(--border-light) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-line.short {
+  width: 40%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 .unread-badge {
   display: inline-flex;
   align-items: center;

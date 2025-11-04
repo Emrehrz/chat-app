@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 
 export const useAuthStore = defineStore('auth', () => {
   const currentUser = ref(null)
@@ -9,16 +9,14 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref(null)
 
   const isAuthenticated = computed(() => currentUser.value !== null)
-  const isConfigured = computed(() => isSupabaseConfigured())
 
   // Initialize auth state
   async function initialize() {
     loading.value = true
     try {
-      // Check if Supabase is configured
-      if (!isSupabaseConfigured()) {
-        console.warn('Supabase is not configured. Using mock mode.')
-        checkMockAuth()
+      // Guard: require Supabase to be configured in production
+      if (!supabase) {
+        error.value = 'Supabase not configured'
         return
       }
 
@@ -81,8 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, newSession) => {
-        console.log('Auth state changed:', event)
+      supabase.auth.onAuthStateChange(async (_event, newSession) => {
         session.value = newSession
 
         if (newSession?.user) {
@@ -104,6 +101,7 @@ export const useAuthStore = defineStore('auth', () => {
   // Fetch user profile from database
   async function fetchUserProfile(userId) {
     try {
+      if (!supabase) return
       const { data, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -161,6 +159,7 @@ export const useAuthStore = defineStore('auth', () => {
   // Create user profile
   async function createProfile(userId) {
     try {
+      if (!supabase) return
       const { data: { user } } = await supabase.auth.getUser()
       const username = user.user_metadata?.username || user.email?.split('@')[0] || 'User'
 
@@ -193,12 +192,8 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
+      if (!supabase) return { success: false, error: 'Supabase not configured' }
       // If Supabase not configured, use mock login
-      if (!isSupabaseConfigured()) {
-        loginMock(email.split('@')[0])
-        return { success: true }
-      }
-
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -231,9 +226,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      if (!isSupabaseConfigured()) {
-        return { success: false, error: 'Supabase not configured' }
-      }
+      if (!supabase) return { success: false, error: 'Supabase not configured' }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -265,10 +258,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      if (!isSupabaseConfigured()) {
-        logoutMock()
-        return { success: true }
-      }
+      if (!supabase) return { success: false, error: 'Supabase not configured' }
 
       // Update status to offline before signing out
       await updateStatus('offline')
@@ -312,7 +302,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Update user status
   async function updateStatus(status) {
-    if (!currentUser.value || !isSupabaseConfigured()) return
+    if (!currentUser.value || !supabase) return
 
     try {
       const { error: updateError } = await supabase
@@ -330,43 +320,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // Mock functions for development without Supabase
-  function loginMock(username) {
-    const user = {
-      id: Date.now().toString(),
-      username: username,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`,
-      status: 'online',
-      joinedAt: new Date().toISOString()
-    }
-    currentUser.value = user
-    localStorage.setItem('chatAppUser', JSON.stringify(user))
-  }
-
-  function logoutMock() {
-    currentUser.value = null
-    localStorage.removeItem('chatAppUser')
-  }
-
-  function checkMockAuth() {
-    const savedUser = localStorage.getItem('chatAppUser')
-    if (savedUser) {
-      currentUser.value = JSON.parse(savedUser)
-    }
-  }
-
-  // Legacy function for backward compatibility
-  function checkAuth() {
-    if (!isSupabaseConfigured()) {
-      checkMockAuth()
-    }
-  }
+  // Legacy no-op kept for backward compatibility
+  function checkAuth() { }
 
   return {
     currentUser,
     session,
     isAuthenticated,
-    isConfigured,
     loading,
     error,
     initialize,

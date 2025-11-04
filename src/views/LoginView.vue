@@ -102,9 +102,7 @@ const toggleMode = () => {
 
         <span v-if="error" class="block text-red-500 text-sm mt-2">{{ error }}</span>
 
-        <span v-if="!authStore.isConfigured" class="block text-yellow-600 text-sm mt-2 bg-yellow-50 p-2 rounded">
-          ⚠️ Supabase yapılandırılmamış. Mock mode aktif.
-        </span>
+
 
         <button @click="handleSubmit" class="btn btn-primary w-full text-lg font-semibold py-3 mt-4"
           :disabled="isLoading">
